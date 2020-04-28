@@ -1,0 +1,191 @@
+---
+title: "Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(skimr)
+library(countrycode)
+library(maps)
+library(sf)
+library(tidycensus)
+library(tools)
+library(gganimate)
+
+```
+
+```{r, include=FALSE}
+# Data from DHS which is mandated to publicly announce immigration data. Taken from
+# their excel spreadsheets. 
+
+dir.create("raw-data")
+```
+
+# LPR Data
+
+```{r, include=FALSE}
+# I should further clean this data by removing subscripts and totals. Also remember
+# that this data can be easily selected.
+
+lpr_raw_hist <- read_excel("raw-data/lpr_data.xlsx",
+                      range = cell_rows(c(4:92)),
+                      na = c("-", "D", "X"))
+
+lpr_data_hist <- lpr_raw_hist %>% 
+  clean_names() %>% 
+  remove_empty()
+
+
+lpr_data <- read_excel("raw-data/lpr_data_recent.xlsx",
+                      range = cell_rows(c(4:220)),
+                      na = c("-", "D", "X")) %>% 
+  clean_names() %>% 
+  remove_empty()
+
+```
+
+# Admissability
+
+```{r, include=FALSE}
+# Same as above. This data could be easier to pivot into an easier to digest
+# format. 
+
+adm_raw <- read_excel("raw-data/aliens_inadmissable.xlsx",
+                      range = cell_rows(c(4:201)),
+                      na = c("-", "D", "X"))
+
+adm_data <- adm_raw %>% 
+  clean_names() %>% 
+  remove_empty()
+
+
+
+```
+
+# Tidied
+
+```{r}
+
+
+lpr_join <- lpr_data %>% 
+  slice(12:216) %>% 
+  select(region_and_country_of_birth, x2009, x2010, x2011, x2012, x2013, x2014, x2015, x2016, x2017, x2018) %>% 
+  rename("country" = region_and_country_of_birth) %>% 
+  pivot_longer(-country, 
+               names_to = "year",
+               names_prefix = "x",
+               values_to = "admissions") %>% 
+  mutate(country = str_replace_all(country, "[0-9,]", ""))
+
+adm_join  <- adm_data %>% 
+  slice(12:197) %>% 
+  select(region_and_country_of_nationality, x2009, x2010, x2011, x2012, x2013, x2014, x2015, x2016, x2017, x2018) %>% 
+  rename("country" = region_and_country_of_nationality) %>% 
+  pivot_longer(-country, 
+               names_to = "year",
+               names_prefix = "x",
+               values_to = "exclusions") %>% 
+  mutate(country = str_replace_all(country, "[0-9,]", ""))
+
+
+comp <- full_join(lpr_join, adm_join, by = c("country", "year"))
+
+comp <- comp %>% 
+  filter(!is.na(admissions)) %>% 
+  filter(!is.na(exclusions)) %>% 
+  mutate(prop = exclusions / admissions)
+
+
+total <- comp %>% 
+  group_by(country) %>% 
+  summarise(total_excluded = sum(exclusions), 
+            total_admitted = sum(admissions)) %>% 
+  filter(total_admitted > 1000) %>% 
+  mutate(prop = total_excluded / total_admitted) 
+
+total <- total %>% 
+  mutate(region = countrycode(country, origin = 'country.name', destination = 'region')) %>% filter(!is.na(region)) %>% 
+  filter(country != "Canada")
+
+
+plot <- ggplot(total, aes(x = total_admitted, y = total_excluded, color = region)) + geom_point() + geom_smooth(method = "lm") + facet_wrap(~region, scales = "free")
+
+
+```
+# States
+
+```{r}
+
+
+state <- read_excel("raw-data/admissable_by_state.xlsx",
+                      range = cell_rows(c(4:58))) %>% 
+  slice(-1) %>% 
+  rename("state" = `State or territory of residence`) %>% 
+  pivot_longer(-state, names_to = "year", values_to = "admissions")
+
+
+
+states <- st_as_sf(map("state", plot = FALSE, fill = TRUE))
+
+
+graph <- state %>% 
+  filter(! state %in% c("Alaska", "Hawaii", "Puerto Rico")) %>%
+  mutate(state = tolower(state)) %>% 
+  full_join(states, by = c("state" = "ID"))
+
+graph %>% ggplot(aes(fill = admissions)) +
+  geom_sf(data = graph, aes(geometry = geom)) +
+  scale_fill_viridis_c(option = "plasma",
+                       direction = -1) +
+  labs(title = "Year: {current_frame}",
+       caption = "Source:",
+       fill = "Admissions") +
+  theme_void() + transition_manual(year)
+
+
+adm_state <- read_excel("raw-data/aliens_inadmissable_by_state.xlsx") %>% 
+  pivot_longer(-state, names_to = "year", values_to = "exclusions")
+                      
+graph_2 <- adm_state %>% 
+  filter(! state %in% c("Alaska", "Hawaii", "Puerto Rico")) %>%
+  mutate(state = tolower(state)) %>% 
+  full_join(states, by = c("state" = "ID"))
+
+graph_2 %>% ggplot(aes(fill = exclusions)) +
+  geom_sf(data = graph_2, aes(geometry = geom)) +
+  scale_fill_viridis_c(option = "plasma",
+                       direction = -1) +
+  labs(title = "Year: {current_frame}",
+       caption = "Source:",
+       fill = "Exclusions") +
+  theme_void() + transition_manual(year)
+
+# Combining
+
+states_combined <- state %>% 
+  mutate(state = tolower(state)) %>% 
+  inner_join(adm_state, by = c("state", "year"))
+
+```
+
+# State Department
+
+```{r, include=FALSE}
+
+
+library(tm)
+
+file <- "raw-data/state_2017.pdf"
+
+Rpdf <- readPDF()
+corpus <- VCorpus(URISource(file), 
+      readerControl = list(reader = Rpdf))
+corpus.array <- content()) %>% 
+  view()
+
+```
+
