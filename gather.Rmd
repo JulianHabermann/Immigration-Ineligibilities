@@ -172,6 +172,23 @@ states_combined <- state %>%
 
 ```
 
+```{r}
+
+eb_data <- read_excel("raw-data/eb.xlsx",
+                      range = cell_rows(c(4:211)),
+                      na = c("D", "X", "-")) %>% 
+  clean_names() %>% 
+  remove_empty() %>% 
+  rename(employment = "employment_based_preferences") %>% 
+  rename(country = "region_and_country_of_birth") %>% 
+  select(country, total, employment) %>% 
+  slice(12:207) %>% 
+  mutate(prop = round(employment / total * 100, 2)) %>% 
+  mutate(check = if_else(total > 283, TRUE, FALSE)) %>% 
+  filter(check == TRUE) %>% 
+  select(-check)
+
+
 # State Department
 
 ```{r, include=FALSE}

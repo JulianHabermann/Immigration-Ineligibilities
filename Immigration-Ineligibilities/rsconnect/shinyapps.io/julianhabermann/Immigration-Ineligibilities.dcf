@@ -1,0 +1,12 @@
+name: Immigration-Ineligibilities
+title: Immigration-Ineligibilities
+username:
+account: julianhabermann
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2201346
+bundleId: 3076678
+url: https://julianhabermann.shinyapps.io/Immigration-Ineligibilities/
+when: 1588078837.94883
+asMultiple: FALSE
+asStatic: FALSE
